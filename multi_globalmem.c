@@ -4,6 +4,7 @@
 #include <linux/cdev.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/mutex.h>
 
 #define GLOBAL_SIZE 0x1000
 #define MEM_CLEAR 0x1
@@ -17,6 +18,7 @@ module_param(globalmem_major, int, S_IRUGO);
 struct globalmem_dev{
     struct cdev cdev;
     unsigned char mem[GLOBAL_SIZE];
+	struct mutex mutex;
 };
 
 struct globalmem_dev *globalmem_devp;
@@ -39,7 +41,9 @@ static long globalmem_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 	switch (cmd)
 	{
 		case: MEM_CLEAR:
+			mutex_lock(&dev->mutex);
 			memset(dev->mem, 0, GLOBAL_SIZE);
+			mutex_unlock(&dev->mutex);
 			printk(KERN_INFO "globalmem is set to zero\n");
 			break;
 		default:
@@ -61,6 +65,7 @@ static ssize_t globalmem_read(struct file * filp, char __user * buf, size_t size
 		return -EFAULT;
 	if(count > GLOBAL_SIZE - p)
 		count = GLOBAL_SIZE - p;
+	mutex_lock(&dev->mutex);
 	if(copy_to_user(buf, dev->mem + p, count)){
 		return -EFAULT;
 	}else{
@@ -68,6 +73,7 @@ static ssize_t globalmem_read(struct file * filp, char __user * buf, size_t size
 		ret = count;
 		printk(KERN_INFO, "read %d bytes..\n", count);
 	}
+	mutex_unlock(&dev->mutex);
 	return ret;
 }
 
@@ -84,6 +90,7 @@ static ssize_t globalmem_write(struct file *filp, const char __user * buf, size_
 		return -EFAULT;
 	if(count > GLOBAL_SIZE - p)
 		count = GLOBAL_SIZE - p;
+	mutex_lock(&dev->mutex);
 	if(copy_from_user(dev->mem + p, buf, count)){
 		return -EFAULT;
 	}else{
@@ -91,6 +98,7 @@ static ssize_t globalmem_write(struct file *filp, const char __user * buf, size_
 		ret = count;
 		printk(KERN_INFO, "write %d bytes..\n", count);
 	}
+	mutex_unlock(&dev->mutex);
 	return ret;
 }
 static ssize_t globalmem_llseek(struct file * filp, loff_t offset, int orig)
@@ -177,6 +185,7 @@ static int __init globalmem_init(void)
 		goto fail_malloc;
 	}
 
+	mutex_init(&globalmem_devp->mutex);
     for(i = 0; i< DEVICE_NUM; i++)
     {
 	    globalmem_setup_cdev(globalmem_devp, 0);
